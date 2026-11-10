@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hangman Game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #f4f1ea;
+      color: #222;
+    }
+    .game {
+      width: 100%;
+      max-width: 440px;
+      margin: 16px;
+      padding: 24px 20px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    h1 { margin: 0 0 4px; font-size: 1.6rem; }
+    .sub { margin: 0 0 12px; color: #666; font-size: 0.9rem; }
+
+    svg { width: 180px; height: 200px; }
+    .gallows { stroke: #444; stroke-width: 4; fill: none; stroke-linecap: round; }
+    .part { stroke: #c0392b; stroke-width: 4; fill: none; stroke-linecap: round; display: none; }
+    .part.show { display: inline; }
+
+    .word {
+      margin: 8px 0 4px;
+      font-size: 2rem;
+      letter-spacing: 0.35em;
+      font-weight: 700;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      min-height: 2.6rem;
+    }
+    .info { margin: 4px 0; color: #555; font-size: 0.95rem; }
+    .message { min-height: 1.6rem; margin: 8px 0; font-weight: 600; }
+    .message.win { color: #1e8e3e; }
+    .message.lose { color: #c0392b; }
+
+    .keyboard {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      margin: 12px 0 16px;
+    }
+    .key {
+      padding: 10px 0;
+      font-size: 1rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 8px;
+      background: #e8e4da;
+      cursor: pointer;
+      transition: transform 0.05s, background 0.15s;
+    }
+    .key:hover:not(:disabled) { background: #d9d3c4; }
+    .key:active:not(:disabled) { transform: scale(0.94); }
+    .key:disabled { cursor: not-allowed; }
+    .key.correct { background: #b7e4c7; color: #1b5e20; }
+    .key.wrong { background: #f5b7b1; color: #922b21; }
+
+    .restart {
+      padding: 10px 22px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      background: #2c3e50;
+      color: #fff;
+      cursor: pointer;
+    }
+    .restart:hover { background: #1f2d3a; }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <h1>Hangman</h1>
+    <p class="sub">Guess the word before the drawing is complete.</p>
+
+    <svg viewBox="0 0 180 200" aria-label="Hangman drawing">
+      <!-- gallows -->
+      <line class="gallows" x1="20" y1="190" x2="120" y2="190" />
+      <line class="gallows" x1="50" y1="190" x2="50" y2="20" />
+      <line class="gallows" x1="50" y1="20" x2="130" y2="20" />
+      <line class="gallows" x1="130" y1="20" x2="130" y2="45" />
+      <!-- body parts, shown one per wrong guess -->
+      <circle class="part" cx="130" cy="62" r="17" />
+      <line class="part" x1="130" y1="79" x2="130" y2="130" />
+      <line class="part" x1="130" y1="92" x2="106" y2="115" />
+      <line class="part" x1="130" y1="92" x2="154" y2="115" />
+      <line class="part" x1="130" y1="130" x2="110" y2="165" />
+      <line class="part" x1="130" y1="130" x2="150" y2="165" />
+    </svg>
+
+    <div id="word" class="word" aria-live="polite"></div>
+    <p class="info">Wrong guesses left: <strong id="left">6</strong></p>
+    <p class="info">Wrong letters: <span id="wrongLetters">-</span></p>
+    <div id="message" class="message" aria-live="assertive"></div>
+
+    <div id="keyboard" class="keyboard"></div>
+    <button id="restart" class="restart">New Game</button>
+  </main>
+
+  <script>
+    const WORDS = ["python", "program", "keyboard", "network", "variable"];
+    const MAX_WRONG = 6;
+
+    let word = "";
+    let guessed = new Set();
+    let wrongLetters = [];
+    let gameOver = false;
+
+    const wordEl = document.getElementById("word");
+    const leftEl = document.getElementById("left");
+    const wrongEl = document.getElementById("wrongLetters");
+    const messageEl = document.getElementById("message");
+    const keyboardEl = document.getElementById("keyboard");
+    const restartBtn = document.getElementById("restart");
+    const parts = document.querySelectorAll(".part");
+
+    function buildKeyboard() {
+      keyboardEl.innerHTML = "";
+      for (let code = 97; code <= 122; code++) {
+        const letter = String.fromCharCode(code);
+        const btn = document.createElement("button");
+        btn.className = "key";
+        btn.textContent = letter;
+        btn.dataset.letter = letter;
+        btn.addEventListener("click", () => guess(letter));
+        keyboardEl.appendChild(btn);
+      }
+    }
+
+    function render() {
+      wordEl.textContent = word
+        .split("")
+        .map(ch => (guessed.has(ch) ? ch : "_"))
+        .join(" ");
+      leftEl.textContent = MAX_WRONG - wrongLetters.length;
+      wrongEl.textContent = wrongLetters.length ? wrongLetters.join(" ") : "-";
+      parts.forEach((p, i) => p.classList.toggle("show", i < wrongLetters.length));
+    }
+
+    function guess(letter) {
+      if (gameOver || guessed.has(letter)) return;
+      guessed.add(letter);
+
+      const key = keyboardEl.querySelector(`[data-letter="${letter}"]`);
+      key.disabled = true;
+
+      if (word.includes(letter)) {
+        key.classList.add("correct");
+      } else {
+        key.classList.add("wrong");
+        wrongLetters.push(letter);
+      }
+
+      render();
+      checkEnd();
+    }
+
+    function checkEnd() {
+      const won = word.split("").every(ch => guessed.has(ch));
+      if (won) {
+        endGame("You won! 🎉", "win");
+      } else if (wrongLetters.length >= MAX_WRONG) {
+        endGame(`Game over! The word was "${word}".`, "lose");
+      }
+    }
+
+    function endGame(text, type) {
+      gameOver = true;
+      messageEl.textContent = text;
+      messageEl.className = "message " + type;
+      keyboardEl.querySelectorAll(".key").forEach(k => (k.disabled = true));
+      if (type === "lose") {
+        // reveal the full word
+        wordEl.textContent = word.split("").join(" ");
+      }
+    }
+
+    function newGame() {
+      word = WORDS[Math.floor(Math.random() * WORDS.length)];
+      guessed = new Set();
+      wrongLetters = [];
+      gameOver = false;
+      messageEl.textContent = "";
+      messageEl.className = "message";
+      buildKeyboard();
+      render();
+    }
+
+    // physical keyboard support
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k.length === 1 && k >= "a" && k <= "z") guess(k);
+    });
+
+    restartBtn.addEventListener("click", newGame);
+    newGame();
+  </script>
+</body>
+</html>
